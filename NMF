@@ -1,0 +1,25 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+class NMF:
+    
+    def __init__(self,mat,r=2):
+        self.d=mat.shape[0]
+        self.N=mat.shape[1]
+        self.W_mat=np.random.random([self.d,r])
+        self.d_mat=np.random.random([r,self.N])
+        self.mat=mat
+        
+    def multi_updat(self,steps=100):
+        loss=[]
+        for i in np.arange(steps):
+            self.d_mat=np.multiply(self.d_mat,np.dot(self.W_mat.T,self.mat)/np.dot(np.dot(self.W_mat.T,self.W_mat),self.d_mat))
+            self.W_mat=np.multiply(self.W_mat,np.dot(self.mat,self.d_mat.T)/np.dot(np.dot(self.W_mat,self.d_mat),self.d_mat.T))
+            loss.append(np.sum(np.square(self.mat-np.dot(self.W_mat,self.d_mat))))
+        return np.dot(self.W_mat,self.d_mat),loss   
+        
+            
+test2=NMF(testmat1,10)
+
+result,loss=test2.multi_updat(10000) 
+plt.plot(loss)
