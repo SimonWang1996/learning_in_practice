@@ -1,0 +1,238 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue May 14 11:24:11 2019
+
+@author: cwan4
+"""
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from numpy import frompyfunc
+from sklearn.metrics import mean_squared_error,r2_score
+
+url='C:/Users/cwan4/Desktop/Couse_related/QBUS6850'
+Ori_data=pd.read_csv(url+'/Margin.csv')
+
+X_train=Ori_data.iloc[:,:-1]
+y_train=Ori_data.iloc[:,-1]
+
+X_train_mat=np.matrix(X_train)
+y_train_mat=np.matrix(y_train).T
+
+X_train_mat/=np.max(X_train_mat,axis=0)
+y_train_mat/=np.max(y_train_mat)
+
+#%%
+"""
+mini-batch
+"""
+class decent_index:
+    def gen_index(num,batch):
+        m=int(np.ceil(num/batch))
+        origin_index=np.arange(m*batch)
+        #index 随机化
+        np.random.shuffle(origin_index)
+        origin_index=origin_index.reshape(m,batch).tolist()
+        origin_index[-1]=origin_index[-1][-(m*batch)+num:]
+        """
+        for i in np.arange(m-1):
+            indexs.append(origin_index[:batch])
+            p+=batch
+            origin_index=origin_index[batch:]
+        indexs.append(origin_index)
+        """
+        return origin_index
+
+"""
+dropout
+"""
+
+
+
+#%%activation
+"""
+Activator
+"""
+class Sigmoid:
+    def fore_cal(x):
+        return 1/(1 + np.exp(0-x))
+    def back_cal(x):
+        return np.multiply(x,1-x)
+    def derivative(x):
+        return np.multiply(1/(1 + np.exp(0-x)),1-1/(1 + np.exp(0-x)))
+#%%
+"""
+loss function
+"""           
+class MSE:
+    """
+    0.5*sum of squared error
+    """
+    def loss_cal(y,y_pred):
+        return np.linalg.norm(y-y_pred)**2       
+    def derivative(y,y_pred):
+        return y_pred-y
+        
+#%%
+
+class layers:
+    
+    def __init__(self,Weight=0,bias=0,actifunc=1):
+
+        self.Weight = Weight
+        self.bias=bias
+        self.output=0
+        self.actifunc=actifunc
+
+    def forward_cal(self,inputs):
+        self.inputs=inputs
+        output=np.dot(self.inputs,self.Weight)+np.dot(np.ones((self.inputs.shape[0],1)),self.bias)
+        self.output=self.actifunc.fore_cal(output)
+    
+    def backward_cal(self,next_delta):
+        self.delta =  np.multiply(self.actifunc.back_cal(self.inputs),
+                                  np.dot(next_delta,self.Weight.T))
+        self.Gradient = np.dot(self.inputs.T,next_delta)
+        self.bias_g=np.dot(np.ones((1,next_delta.shape[0])),next_delta)
+
+    def update(self, learning_rate):
+        self.Weight = self.Weight-learning_rate*self.Gradient
+        self.bias=self.bias-learning_rate*self.bias_g
+
+class nn:
+    
+    def __init__(self,X_train,y_train,shapes=[6,12,1],
+                 steps=10000,
+                 learning_rate=0.01,
+                 dropout=0.1,
+                 acti_func=Sigmoid,
+                 lossfunc=MSE,
+                 batch=100, #每次用于计算Gradient的sample数量
+                 desent_index=decent_index
+                 ):
+        
+        self.learning_rate=learning_rate
+        self.X_train=X_train
+        self.y_train=y_train
+        self.steps=steps
+        self.layers=[]
+        self.shapes=shapes
+        self.dropout=0.001
+        self.acti_func=acti_func
+        self.lossfunc=lossfunc
+        self.num=len(X_train)
+        self.batch=batch
+        self.decent_index=decent_index
+        
+    def constru_layers(self):
+        """
+        结构构件
+        """
+        self.Weights=[]
+        self.bias=[]
+        for i in np.arange(len(self.shapes)-1):
+            self.Weights.append(np.random.randn(self.shapes[i],self.shapes[i+1]))
+            self.bias.append(np.random.randn(1,self.shapes[i+1]))
+
+        np.random.seed(0)
+        for i in np.arange(len(self.Weights)):
+            self.layers.append(layers(self.Weights[i],self.bias[i],actifunc=self.acti_func))
+            
+            
+        
+    def fit(self):
+        self.constru_layers()
+        steps=self.steps
+        decent_index=self.decent_index.gen_index(self.num,self.batch)
+        #batch=self.batch
+        mses=[]
+        for i in range(steps):
+            for index in decent_index:
+                X_train=self.X_train[index,:]
+                y_train=self.y_train[index,:]
+                #mini batch,batch_szie=self.batch
+                """
+                以下三个步骤为一次更新
+                """
+                self.predict_for_train(X_train)
+                self.gradient_cal(y_train)
+                self.update_weight()
+                temp=self.layers[-1].output
+                mses.append(mean_squared_error(self.y_train[index,:],temp))
+        return mses
+ 
+    def predict_for_train(self,X_train):
+        output = X_train
+        for layer in self.layers:
+            layer.forward_cal(output)
+            output = layer.output
+        
+    def gradient_cal(self,y_train):
+        y=y_train
+        #算第一步的gradient
+        delta = np.multiply(self.acti_func.derivative(np.dot(self.layers[-1].inputs,self.layers[-1].Weight)),
+                            self.lossfunc.derivative(y,self.layers[-1].output)) #修改完成-对每个activation
+        #可写入（y_pred-y增速）
+        for layer in self.layers[::-1]:
+            layer.backward_cal(delta)
+            delta = layer.delta
+    
+    def update_weight(self):
+        rate=self.learning_rate
+        for layer in self.layers[::-1]:
+            layer.update(rate)
+            
+    def predict_for_test(self,X):
+        output = X
+        for layer in self.layers:
+            layer.forward_cal(output)
+            output = layer.output
+        return self.layers[1].output
+    
+    #后续引入dropout
+
+#%%
+test2=nn(X_train_mat,y_train_mat)
+#test2.scaler()
+mse=test2.fit()
+aaa=test2.X_train
+plt.plot(mse)
+#%%
+yyy1=1/(1+ np.exp(0-np.dot(aaa,W1_now)))
+yyy1=1/(1+ np.exp(0-np.dot(yyy1,W2_now)))
+print(r2_score(yyy,ppp))
+#%%
+#NMF
+testmat1=np.random.random([100,200])
+testmat2=np.random.random([100,300])
+testmat3=np.random.random([300,200])
+
+yyy=test2.predict_for_test(X_train_mat)
+plt.plot(yyy)
+plt.plot(y_train_mat)
+
+class NMF:
+    
+    def __init__(self,mat,r=2):
+        self.d=mat.shape[0]
+        self.N=mat.shape[1]
+        self.W_mat=np.random.random([self.d,r])
+        self.d_mat=np.random.random([r,self.N])
+        self.mat=mat
+        
+    def multi_updat(self,steps=100):
+        loss=[]
+        for i in np.arange(steps):
+            self.d_mat=np.multiply(self.d_mat,np.dot(self.W_mat.T,self.mat)/np.dot(np.dot(self.W_mat.T,self.W_mat),self.d_mat))
+            self.W_mat=np.multiply(self.W_mat,np.dot(self.mat,self.d_mat.T)/np.dot(np.dot(self.W_mat,self.d_mat),self.d_mat.T))
+            loss.append(np.sum(np.square(self.mat-np.dot(self.W_mat,self.d_mat))))
+        return np.dot(self.W_mat,self.d_mat),loss   
+        
+            
+test2=NMF(testmat1,10)
+
+result,loss=test2.multi_updat(10000) 
+plt.plot(loss)
+        
